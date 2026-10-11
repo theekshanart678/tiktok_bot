@@ -1,79 +1,117 @@
 import os
 import logging
-from threading import Thread
-from flask import Flask
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 import yt_dlp
 
-# Logging සකස් කිරීම
+# Logging configuration
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-TOKEN = os.environ.get("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# --- Render Free Web Service එක සඳහා Web Server එක ---
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bot is running 24/7!"
-
-def run():
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-# ---------------------------------------------------
-
+# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ආයුබෝවන්! මට TikTok Video Link එකක් එවන්න. මම Watermark නැතුව Download කරලා දෙන්නම්.")
+    await update.message.reply_text(
+        "👋 සාදරයෙන් පිළිගන්නවා!\n\n"
+        "මට ඕනෑම TikTok Link එකක් එවන්න. මම Video එක හෝ Audio (MP3) එක Download කරලා දෙන්නම්! 🚀"
+    )
 
-async def download_tiktok(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text
+# TikTok Link එකක් ලැබුණු විට Buttons පෙන්වීම
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text.strip()
     
-    if "tiktok.com" not in url:
-        await update.message.reply_text("කරුණාකර නිවැරදි TikTok Link එකක් එවන්න.")
-        return
+    if "tiktok.com" in url:
+        # Buttons දෙක සාදාගැනීම
+        keyboard = [
+            [
+                InlineKeyboardButton("🎥 Video Download", callback_data=f"vid|{url}"),
+                InlineKeyboardButton("🎵 Audio Only (MP3)", callback_data=f"aud|{url}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("ඔබට Download කරගැනීමට අවශ්‍ය Format එක තෝරන්න:", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text("⚠️ කරුණාකර වලංගු TikTok Link එකක් එවන්න.")
 
-    msg = await update.message.reply_text(" වීඩියෝ එක ඩවුන්ලෝඩ් වෙමින් පවතී, මඳක් රැඳී සිටින්න...")
-
-    ydl_opts = {
-        'format': 'best',
-        'outtmpl': 'video.mp4',
-        'quiet': True,
-    }
-
+# Button Click කළ විට Download කර Send කිරීම
+async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data.split("|")
+    download_type = data[0]
+    url = data[1]
+    
+    await query.edit_message_text("⏳ Processing... මදක් රැඳී සිටින්න.")
+    
+    filename = f"download_{query.from_user.id}"
+    
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-
-        with open('video.mp4', 'rb') as video_file:
-            await update.message.reply_video(video=video_file, caption="මෙන්න ඔබ ඉල්ලූ වීඩියෝ එක! ")
-
-        if os.path.exists('video.mp4'):
-            os.remove('video.mp4')
+        if download_type == "vid":
+            # Video Download Options
+            ydl_opts = {
+                'format': 'bestvideo+bestaudio/best',
+                'outtmpl': f'{filename}.%(ext)s',
+                'quiet': True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                downloaded_file = ydl.prepare_filename(info)
             
-        await msg.delete()
+            await query.edit_message_text("⬆️ Video එක Upload වෙමින් පවතී...")
+            with open(downloaded_file, 'rb') as video:
+                await query.message.reply_video(video=video, caption="✨ මෙන්න ඔබේ TikTok Video එක!")
+            
+            if os.path.exists(downloaded_file):
+                os.remove(downloaded_file)
+
+        elif download_type == "aud":
+            # Audio (MP3) Download Options
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'outtmpl': f'{filename}.%(ext)s',
+                'quiet': True,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.extract_info(url, download=True)
+            
+            mp3_file = f"{filename}.mp3"
+            
+            await query.edit_message_text("⬆️ Audio එක Upload වෙමින් පවතී...")
+            with open(mp3_file, 'rb') as audio:
+                await query.message.reply_audio(audio=audio, caption="🎵 මෙන්න ඔබේ TikTok Audio (MP3) එක!")
+            
+            if os.path.exists(mp3_file):
+                os.remove(mp3_file)
+                
+        await query.delete_message()
 
     except Exception as e:
-        await update.message.reply_text(f"වීඩියෝ එක ඩවුන්ලෝඩ් කිරීමට නොහැකි විය. Error: {str(e)}")
+        logging.error(f"Error: {e}")
+        await query.edit_message_text(f"❌ Download කිරීමට නොහැකි විය. Error: {str(e)}")
 
 def main():
-    # Web server එක Start කිරීම (Free hosting සඳහා)
-    keep_alive()
-    
-    # Telegram Bot එක Start කිරීම
-    bot_app = ApplicationBuilder().token(TOKEN).build()
-    bot_app.add_handler(CommandHandler("start", start))
-    bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_tiktok))
+    if not BOT_TOKEN:
+        print("BOT_TOKEN set කර නැත!")
+        return
 
-    print("Bot සාර්ථකව Start විය...")
-    bot_app.run_polling()
+    app = Application.builder().token(BOT_TOKEN).build()
 
-if __name__ == '__main__':
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CallbackQueryHandler(button_click))
+
+    print("Bot is running...")
+    app.run_polling()
+
+if __name__ == "__main__":
     main()
