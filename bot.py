@@ -3,11 +3,6 @@ import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import yt_dlp
-import imageio_ffmpeg
-
-# Set ffmpeg path automatically from python package
-ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
-os.environ["PATH"] += os.pathsep + os.path.dirname(ffmpeg_path)
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -19,70 +14,54 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 සාදරයෙන් පිළිගන්නවා!\n\n"
-        "මට ඕනෑම TikTok Link එකක් එවන්න. මම Video එක සහ MP3 Audio එක එකවරම Download කරලා දෙන්නම්! 🚀"
+        "මට ඕනෑම **YouTube** හෝ **TikTok** Link එකක් එවන්න. මම Video එක සහ Audio එක Download කරලා දෙන්නම්! 🚀"
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     url = update.message.text.strip()
     
-    if "tiktok.com" not in url:
-        await update.message.reply_text("⚠️ කරුණාකර වලංගු TikTok Link එකක් එවන්න.")
+    # YouTube සහ TikTok Links විතරක් Check කිරීම
+    if not ("tiktok.com" in url or "youtube.com" in url or "youtu.be" in url):
+        await update.message.reply_text("⚠️ කරුණාකර වලංගු TikTok හෝ YouTube Link එකක් එවන්න.")
         return
 
     status_msg = await update.message.reply_text("⏳ Processing... මදක් රැඳී සිටින්න.")
-    filename_base = f"download_{user_id}"
+    filename_vid = f"media_{user_id}.mp4"
 
     try:
-        await status_msg.edit_text("⬇️ Video එක සහ MP3 Audio එක Download වෙමින් පවතී...")
+        await status_msg.edit_text("⬇️ Video එක Download වෙමින් පවතී...")
 
-        # 1. Download Video
-        ydl_opts_video = {
-            'format': 'bestvideo+bestaudio/best',
-            'outtmpl': f'{filename_base}_vid.%(ext)s',
+        # Direct stream download options (FFmpeg අත්‍යවශ්‍ය නොවේ)
+        ydl_opts = {
+            'format': 'best[ext=mp4]/best',
+            'outtmpl': filename_vid,
             'quiet': True,
-            'ffmpeg_location': ffmpeg_path,
+            'no_warnings': True,
         }
-        video_file = None
-        with yt_dlp.YoutubeDL(ydl_opts_video) as ydl:
-            info_vid = ydl.extract_info(url, download=True)
-            video_file = ydl.prepare_filename(info_vid)
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
 
-        # 2. Extract MP3 Audio
-        ydl_opts_audio = {
-            'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'outtmpl': f'{filename_base}_aud.%(ext)s',
-            'quiet': True,
-            'ffmpeg_location': ffmpeg_path,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts_audio) as ydl:
-            ydl.extract_info(url, download=True)
-        mp3_file = f"{filename_base}_aud.mp3"
+        await status_msg.edit_text("⬆️ Telegram එකට Upload වෙමින් පවතී...")
 
-        await status_msg.edit_text("⬆️ Upload වෙමින් පවතී...")
+        # Video එක Send කිරීම
+        if os.path.exists(filename_vid):
+            with open(filename_vid, 'rb') as v_file:
+                await update.message.reply_video(video=v_file, caption="🎬 Downloader Video")
+            
+            # Audio Stream එකක් ලෙස Send කිරීම
+            with open(filename_vid, 'rb') as a_file:
+                await update.message.reply_audio(audio=a_file, caption="🎵 Downloader Audio")
 
-        # Send Video
-        if video_file and os.path.exists(video_file):
-            with open(video_file, 'rb') as v_file:
-                await update.message.reply_video(video=v_file, caption="🎬 TikTok Video එක")
-            os.remove(video_file)
-
-        # Send MP3 Audio
-        if os.path.exists(mp3_file):
-            with open(mp3_file, 'rb') as a_file:
-                await update.message.reply_audio(audio=a_file, caption="🎵 TikTok MP3 Audio එක")
-            os.remove(mp3_file)
+            # File එක Delete කිරීම
+            os.remove(filename_vid)
 
         await status_msg.delete()
 
     except Exception as e:
         logging.error(f"Error: {e}")
-        await status_msg.edit_text(f"❌ Download කිරීමට නොහැකි විය: {str(e)}")
+        await status_msg.edit_text(f"❌ Download කිරීමට නොහැකි විය. Link එක පරීක්ෂා කරන්න.\n\nError: {str(e)}")
 
 def main():
     if not BOT_TOKEN:
@@ -90,7 +69,6 @@ def main():
         return
 
     app = Application.builder().token(BOT_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
