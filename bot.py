@@ -14,7 +14,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 සාදරයෙන් පිළිගන්නවා!\n\n"
-        "මට ඕනෑම **YouTube** හෝ **TikTok** Link එකක් එවන්න. මම Video එක සහ Audio එක Download කරලා දෙන්නම්! 🚀"
+        "මට ඕනෑම  **TikTok** Link එකක් එවන්න. මම Video එක සහ Audio එක Download කරලා දෙන්නම්! 🚀"
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
