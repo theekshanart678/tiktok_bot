@@ -1,3 +1,4 @@
+
 import os
 import json
 import logging
@@ -5,7 +6,6 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import yt_dlp
 
-# Logging configuration
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -13,12 +13,11 @@ logging.basicConfig(
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# ⚠️ මෙතැනට ඔබේ Telegram User ID එක එකතු කරන්න
+# ⚠️ මෙතැනට ඔබේ Telegram User ID එක යොදන්න (උදා: ADMIN_ID = 987654321)
 ADMIN_ID = 5620315302  
 
 USERS_FILE = "users.json"
 
-# User ID එක Save කරගැනීමේ Function එක
 def save_user(user_id):
     users = set()
     if os.path.exists(USERS_FILE):
@@ -33,7 +32,6 @@ def save_user(user_id):
         with open(USERS_FILE, "w") as f:
             json.dump(list(users), f)
 
-# Users ගණන ලබාගන්නා Function එක
 def get_user_count():
     if os.path.exists(USERS_FILE):
         try:
@@ -44,7 +42,6 @@ def get_user_count():
             return 0
     return 0
 
-# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     save_user(user_id)
@@ -54,7 +51,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "මට ඕනෑම TikTok Link එකක් එවන්න. මම Video එක සහ MP3 Audio එක එකවරම Automatic Download කරලා දෙන්නම්! 🚀"
     )
 
-# Admin ට පමණක් Users count එක බලාගැනීමේ /stats command එක
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id == ADMIN_ID:
@@ -63,7 +59,6 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("⚠️ ඔබට මෙම Command එක භාවිතා කිරීමට අවසර නැත.")
 
-# TikTok Link එකක් ලැබුණු විට Video එක සහ MP3 එක එකවර Download කර Send කිරීම
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     save_user(user_id)
@@ -80,17 +75,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await status_msg.edit_text("⬇️ Video එක සහ MP3 එක Download වෙමින් පවතී...")
 
-        # 1. Download Video
+        # 1. Video Download
         ydl_opts_video = {
             'format': 'bestvideo+bestaudio/best',
             'outtmpl': f'{filename_base}_vid.%(ext)s',
             'quiet': True,
         }
+        video_file = None
         with yt_dlp.YoutubeDL(ydl_opts_video) as ydl:
             info_vid = ydl.extract_info(url, download=True)
             video_file = ydl.prepare_filename(info_vid)
 
-        # 2. Extract MP3 Audio
+        # 2. Audio MP3 Extract
         ydl_opts_audio = {
             'format': 'bestaudio/best',
             'postprocessors': [{
@@ -105,29 +101,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ydl.extract_info(url, download=True)
         mp3_file = f"{filename_base}_aud.mp3"
 
-        # Uploading files to Telegram
         await status_msg.edit_text("⬆️ Upload වෙමින් පවතී...")
 
         # Send Video
-        with open(video_file, 'rb') as v_file:
-            await update.message.reply_video(video=v_file, caption="🎬 TikTok Video එක")
-
-        # Send MP3 Audio
-        with open(mp3_file, 'rb') as a_file:
-            await update.message.reply_audio(audio=a_file, caption="🎵 TikTok MP3 Audio එක")
-
-        # Delete temporary files from server
-        if os.path.exists(video_file):
+        if video_file and os.path.exists(video_file):
+            with open(video_file, 'rb') as v_file:
+                await update.message.reply_video(video=v_file, caption="🎬 TikTok Video එක")
             os.remove(video_file)
+
+        # Send MP3
         if os.path.exists(mp3_file):
+            with open(mp3_file, 'rb') as a_file:
+                await update.message.reply_audio(audio=a_file, caption="🎵 TikTok MP3 Audio එක")
             os.remove(mp3_file)
 
-        # Delete status message
         await status_msg.delete()
 
     except Exception as e:
         logging.error(f"Error: {e}")
-        await status_msg.edit_text(f"❌ Download කිරීමට නොහැකි විය. Error: {str(e)}")
+        await status_msg.edit_text(f"❌ Download කිරීමට නොහැකි විය: {str(e)}")
 
 def main():
     if not BOT_TOKEN:
