@@ -3,8 +3,12 @@ import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import yt_dlp
+import imageio_ffmpeg
 
-# Logging configuration
+# Set ffmpeg path automatically from python package
+ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+os.environ["PATH"] += os.pathsep + os.path.dirname(ffmpeg_path)
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -12,14 +16,12 @@ logging.basicConfig(
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 සාදරයෙන් පිළිගන්නවා!\n\n"
         "මට ඕනෑම TikTok Link එකක් එවන්න. මම Video එක සහ MP3 Audio එක එකවරම Download කරලා දෙන්නම්! 🚀"
     )
 
-# TikTok Link එකක් ලැබුණු විට Video + MP3 Audio එකවර Download කර Send කිරීම
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     url = update.message.text.strip()
@@ -39,6 +41,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'format': 'bestvideo+bestaudio/best',
             'outtmpl': f'{filename_base}_vid.%(ext)s',
             'quiet': True,
+            'ffmpeg_location': ffmpeg_path,
         }
         video_file = None
         with yt_dlp.YoutubeDL(ydl_opts_video) as ydl:
@@ -55,12 +58,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }],
             'outtmpl': f'{filename_base}_aud.%(ext)s',
             'quiet': True,
+            'ffmpeg_location': ffmpeg_path,
         }
         with yt_dlp.YoutubeDL(ydl_opts_audio) as ydl:
             ydl.extract_info(url, download=True)
         mp3_file = f"{filename_base}_aud.mp3"
 
-        # Uploading files to Telegram
         await status_msg.edit_text("⬆️ Upload වෙමින් පවතී...")
 
         # Send Video
@@ -75,7 +78,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_audio(audio=a_file, caption="🎵 TikTok MP3 Audio එක")
             os.remove(mp3_file)
 
-        # Delete status message
         await status_msg.delete()
 
     except Exception as e:
