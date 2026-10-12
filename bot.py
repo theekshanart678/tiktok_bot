@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -12,15 +13,61 @@ logging.basicConfig(
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
+# ⚠️ මෙතැනට ඔබේ Telegram User ID එක එකතු කරන්න
+ADMIN_ID = 5620315302  
+
+USERS_FILE = "users.json"
+
+# User ID එක Save කරගැනීමේ Function එක
+def save_user(user_id):
+    users = set()
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r") as f:
+                users = set(json.load(f))
+        except Exception:
+            users = set()
+            
+    if user_id not in users:
+        users.add(user_id)
+        with open(USERS_FILE, "w") as f:
+            json.dump(list(users), f)
+
+# Users ගණන ලබාගන්නා Function එක
+def get_user_count():
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r") as f:
+                users = json.load(f)
+                return len(users)
+        except Exception:
+            return 0
+    return 0
+
 # /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    save_user(user_id)
+    
     await update.message.reply_text(
         "👋 සාදරයෙන් පිළිගන්නවා!\n\n"
         "මට ඕනෑම TikTok Link එකක් එවන්න. මම Video එක සහ MP3 Audio එක එකවරම Automatic Download කරලා දෙන්නම්! 🚀"
     )
 
+# Admin ට පමණක් Users count එක බලාගැනීමේ /stats command එක
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id == ADMIN_ID:
+        count = get_user_count()
+        await update.message.reply_text(f"📊 **Bot Statistics**\n\n👤 මුළු Users ලා ගණන: **{count}**", parse_mode="Markdown")
+    else:
+        await update.message.reply_text("⚠️ ඔබට මෙම Command එක භාවිතා කිරීමට අවසර නැත.")
+
 # TikTok Link එකක් ලැබුණු විට Video එක සහ MP3 එක එකවර Download කර Send කිරීම
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    save_user(user_id)
+    
     url = update.message.text.strip()
     
     if "tiktok.com" not in url:
@@ -28,7 +75,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     status_msg = await update.message.reply_text("⏳ Processing... මදක් රැඳී සිටින්න.")
-    filename_base = f"download_{update.message.from_user.id}"
+    filename_base = f"download_{user_id}"
 
     try:
         await status_msg.edit_text("⬇️ Video එක සහ MP3 එක Download වෙමින් පවතී...")
@@ -90,6 +137,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stats", stats))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Bot is running...")
